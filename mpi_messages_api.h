@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
 
 
 typedef struct msgObj
@@ -17,7 +18,6 @@ typedef struct msgObj
 // Return value: Success - 0, Failure - -1
 int send_mpi_message(int rank, const char* message, ssize_t message_size)
 {
-    msgObj msg = {getpid(),rank,message,message_size};
     int res;
     __asm__ (
         "pushl %%eax;"
@@ -26,6 +26,8 @@ int send_mpi_message(int rank, const char* message, ssize_t message_size)
         "pushl %%edx;"
         "movl $244, %%eax;"
         "movl %1, %%ebx;"
+        "movl %2, %%ecx;"
+        "movl %3, %%edx;"
         "int $0x80;"
         "movl %%eax,%0;"
         "popl %%edx;"
@@ -33,14 +35,13 @@ int send_mpi_message(int rank, const char* message, ssize_t message_size)
         "popl %%ebx;"
         "popl %%eax;"
         : "=m" (res)
-        : "m"(msg)
+        : "m"(rank), "m" (message), "m" (message_size)
     );
-    // TODO: Handle post return 
-    /*if (res >= (unsigned long)(-125))
+    if ((unsigned long)res >= (unsigned long)(-125))
     {
         errno = -res;
         res = -1;
-    } */
+    }
     return (int) res;
 }
 
@@ -49,29 +50,19 @@ int send_mpi_message(int rank, const char* message, ssize_t message_size)
 int register_mpi()
 {
     int res;
-    pid_t pid = getpid();
     __asm__ (
         "pushl %%eax;"
-        "pushl %%ebx;"
-        "pushl %%ecx;"
-        "pushl %%edx;"
         "movl $243, %%eax;"
-        "movl %1, %%ebx;"
         "int $0x80;"
         "movl %%eax,%0;"
-        "popl %%edx;"
-        "popl %%ecx;"
-        "popl %%ebx;"
         "popl %%eax;"
         : "=m" (res)
-        : "m"(pid)
     );
-    // TODO: Handle post return 
-    /*if (res >= (unsigned long)(-125))
+    if ((unsigned long)res >= (unsigned long)(-125))
     {
         errno = -res;
         res = -1;
-    } */
+    }
     return (int) res;
 }
 
@@ -80,7 +71,7 @@ int register_mpi()
 // Return value: Success - Size of the message, Failure - -1
 int receive_mpi_message(int rank, char *message, ssize_t message_size)
 {
-    msgObj msg = {getpid(),rank,message,message_size};
+    int res;
     __asm__ (
         "pushl %%eax;"
         "pushl %%ebx;"
@@ -88,6 +79,8 @@ int receive_mpi_message(int rank, char *message, ssize_t message_size)
         "pushl %%edx;"
         "movl $245, %%eax;"
         "movl %1, %%ebx;"
+        "movl %2, %%ecx;"
+        "movl %3, %%edx;"
         "int $0x80;"
         "movl %%eax,%0;"
         "popl %%edx;"
@@ -95,14 +88,14 @@ int receive_mpi_message(int rank, char *message, ssize_t message_size)
         "popl %%ebx;"
         "popl %%eax;"
         : "=m" (res)
-        : "m"(msg)
+        :"m"(rank), "m" (message), "m" (message_size)
     );
     // TODO: Handle post return 
-    /*if (res >= (unsigned long)(-125))
+    if ((unsigned long)res >= (unsigned long)(-125))
     {
         errno = -res;
         res = -1;
-    } */
+    }
     return (int) res;
 }
 
