@@ -3,10 +3,10 @@
 #include <asm/current.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <asm/uaccess.h>
 
 list_t g_mpi_head = LIST_HEAD_INIT(g_mpi_head);
 int nextRank = 0;
-
 
 int sys_register_mpi(void)
 {
@@ -23,7 +23,7 @@ int sys_register_mpi(void)
     return current->rank;
 }
 
-void sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
+int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
 {
     // check parameters
     if ( message == NULL || message_size < 1)
@@ -32,17 +32,17 @@ void sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     if ( current->rank == -1)
         return -ESRCH;
     // search for rank in the linked list
-    list_t pos;
-    bool found = false;
-    list_for_each(pos,g_mpi_head)
+    list_t* pos;
+    BOOL found = FALSE;
+    list_for_each(pos,&g_mpi_head)
     {
         if( list_entry(pos,g_mpi_t, mylist)->rank == rank)
         {
-            found = true;
+            found = TRUE;
             break;
         }
     }
-    if (found == false)
+    if (found == FALSE)
         return -ESRCH; // rank was not found in the mpi processes list
     // both sender and receiver are in the mpi list, copy the message from the user
     char* copiedMsg = (char*)kmalloc(message_size*sizeof(char), GFP_KERNEL);
@@ -68,7 +68,7 @@ void sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     return 0;
 }
 
-void sys_receive_mpi_message(int rank, const char* message, ssize_t message_size)
+int sys_receive_mpi_message(int rank, const char* message, ssize_t message_size)
 {
     // check parameters
     if ( message == NULL || message_size < 1)
@@ -77,36 +77,36 @@ void sys_receive_mpi_message(int rank, const char* message, ssize_t message_size
     if ( current->rank == -1)
         return -ESRCH;
     // search for rank in the linked list
-    list_t pos;
-    bool found = false;
-    list_for_each(pos,g_mpi_head)
+    list_t *pos;
+    BOOL found = FALSE;
+    list_for_each(pos,&g_mpi_head)
     {
         if( list_entry(pos,g_mpi_t, mylist)->rank == rank)
         {
-            found = true;
+            found = TRUE;
             break;
         }
     }
-    if (found == false)
+    if (found == FALSE)
         return -ESRCH; // rank was not found in the mpi processes list
     // both sender and receiver are in the mpi list,
     // check if there is a message waiting from 'rank'
-    found = false;
-    list_for_each(pos,current->taskMsgHead)
+    found = FALSE;
+    list_for_each(pos,&(current->taskMsgHead))
     {
         if( list_entry(pos,msg_q_t, mylist)->senderRank == rank)
         {
-            found = true;
+            found = TRUE;
             break;
         }
     }
-    if ( found == false ) // no message waiting from rank, even though rank is indeed in the mpi list
+    if ( found == FALSE ) // no message waiting from rank, even though rank is indeed in the mpi list
         return -EFAULT;
     
     msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
-    // found is true, so pos is the relevant message entry from rank to the receiver
+    // found is TRUE, so pos is the relevant message entry from rank to the receiver
     // TODO : what if message_size if smaller than the actual message size?
-    if ( copy_to_user( message, curMsg->msg) , curMsg->msgsize) )
+    if ( copy_to_user( message, curMsg->msg , curMsg->msgsize) )
         return -EFAULT;
     ssize_t copiedSize = curMsg->msgsize; //TODO: is it possible that copy to user copied less?    
     // done copying the message, remove the entry
