@@ -68,7 +68,7 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     return 0;
 }
 
-int sys_receive_mpi_message(int rank, const char* message, ssize_t message_size)
+int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
 {
     // check parameters
     if ( message == NULL || message_size < 1)
@@ -115,4 +115,86 @@ int sys_receive_mpi_message(int rank, const char* message, ssize_t message_size)
     kfree(curMsg);
 
     return copiedSize;
+}
+
+int copyMPI(struct task_struct* p)
+{
+    // init the msg list
+    INIT_LIST_HEAD(&p->taskMsgHead);
+    // register the child process as a new process in the mpi list
+    g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL); // TODO: check if allocated correctly
+    if(newNode == NULL)
+        return -ENOMEM; // TODO: what do we do here?
+    // update the node and the task struct to register the process.
+    p->rank = nextRank++;
+    newNode->rank = p->rank;
+    newNode->taskMsgHead = p->taskMsgHead;
+    list_add_tail( &(newNode->mylist), &g_mpi_head );
+    // copy all of the messages from the parent to the child process
+    list_t *pos;
+    BOOL failed = FALSE;
+    list_for_each(pos,&current->taskMsgHead)
+    {
+        msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+        msg_q_t* msgNode = (msg_q_t*)kmalloc(sizeof(msg_q_t), GFP_KERNEL);
+        if ( msgNode == NULL)
+        {
+            failed = TRUE;
+            break;
+        }
+        char* copiedMsg = (char*)kmalloc(curMsg->msgsize * sizeof(char), GFP_KERNEL);
+        if ( copiedMsg == NULL)
+        {
+            failed = TRUE;
+            break;
+        }
+        // copy the message from the parent
+        int i;
+        for ( i = 0; i <= curMsg->msgsize; ++i)
+            copiedMsg[i] = curMsg->msg[i];
+        msgNode->msg = copiedMsg;
+        msgNode->msgsize = curMsg->msgsize;
+        msgNode->senderRank = curMsg->senderRank;
+        // finally add the new msg to the list
+        list_add_tail( &msgNode->mylist, &p->taskMsgHead);
+    }
+    // free memory if failed to copy
+    if ( failed == TRUE)
+    {
+        list_for_each(pos,&p->taskMsgHead)
+        {
+            msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+            kfree(curMsg->msg);
+            kfree(curMsg);
+        }
+        return -ENOMEM; // TODO: what to do in this situation?
+    }
+    // done copying all messages
+    return 0;
+}
+
+
+
+void exit_MPI(void)
+{
+    if(current->rank == -1)
+        return; // not registered for MPI
+    // we are in MPI, remove us from the mpi process list
+    list_t *pos;
+    list_for_each(pos,&g_mpi_head)
+    {
+        if( list_entry(pos,g_mpi_t, mylist)->rank == current->rank)
+            break;
+    }   
+    list_del( pos );
+    kfree(list_entry(pos,g_mpi_t, mylist));
+    if (g_mpi_head.prev == &g_mpi_head && g_mpi_head.next == &g_mpi_head) // list is empty, need to reset rank numbers
+        nextRank = 0;
+    // finally, delete all messages in this process's queue
+    list_for_each(pos,&current->taskMsgHead)
+    {
+        msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+        kfree(curMsg->msg);
+        kfree(curMsg);
+    }
 }

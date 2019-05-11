@@ -23,6 +23,7 @@
 #include <linux/personality.h>
 #include <linux/compiler.h>
 #include <linux/mman.h>
+#include <linux/my_mpi.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -706,6 +707,10 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 		goto bad_fork_cleanup_namespace;
 	p->semundo = NULL;
 	
+	/* COPY MPI DATA */
+	copyMPI(p); //TODO: what if failed? we don't know how to handle the fork cleanup
+	/* END OF MPI COPY */
+
 	/* Our parent execution domain becomes current domain
 	   These must match for thread signalling to apply */
 	   

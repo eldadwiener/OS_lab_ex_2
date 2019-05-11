@@ -13,6 +13,7 @@
 #include <linux/personality.h>
 #include <linux/tty.h>
 #include <linux/namespace.h>
+#include <linux/my_mpi.h>
 #ifdef CONFIG_BSD_PROCESS_ACCT
 #include <linux/acct.h>
 #endif
@@ -518,6 +519,7 @@ fake_volatile:
 	exit_namespace(tsk);
 	exit_sighand(tsk);
 	exit_thread();
+	exit_MPI();
 
 	if (current->leader)
 		disassociate_ctty(1);
