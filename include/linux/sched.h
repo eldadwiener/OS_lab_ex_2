@@ -141,7 +141,6 @@ extern spinlock_t mmlist_lock;
 
 typedef struct task_struct task_t;
 
-
 extern void sched_init(void);
 extern void init_idle(task_t *idle, int cpu);
 extern void show_state(void);
@@ -452,10 +451,6 @@ struct task_struct {
 
 /* journalling filesystem info */
 	void *journal_info;
-
-/* support of my_mpi */
-	int rank;
-    list_t taskMsgHead;
 };
 
 /*
@@ -561,8 +556,6 @@ extern struct exec_domain	default_exec_domain;
     blocked:		{{0}},						\
     alloc_lock:		SPIN_LOCK_UNLOCKED,				\
     journal_info:	NULL,						\
-	rank: -1,									\
-    taskMsgHead: LIST_HEAD_INIT(tsk.taskMsgHead),	\
 }
 
 
