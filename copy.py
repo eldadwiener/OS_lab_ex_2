@@ -1,10 +1,10 @@
 from shutil import copyfile
 
 files_to_copy = [\
-    'kernel/mpi_messages.c',\
-    'include/linux/mpi_messages.h',\
-    'include/linux/sched.h'\
-    'arch/i386/kernel/entry.S'\
+    'kernel/my_mpi.c',\
+    'include/linux/my_mpi.h',\
+    'include/linux/sched.h',\
+    'arch/i386/kernel/entry.S',\
     'mpi_messages_api.h']
 
 for file in files_to_copy:
