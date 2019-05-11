@@ -47,7 +47,7 @@ int send_mpi_message(int rank, const char* message, ssize_t message_size)
 
 // Description: Register to the MPI communication list.
 // Return value: Success - Rank of process, Failure - -1
-int register_mpi()
+int register_mpi(void)
 {
     int res;
     __asm__ (
