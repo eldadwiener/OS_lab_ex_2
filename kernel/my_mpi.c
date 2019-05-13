@@ -25,12 +25,16 @@ int sys_register_mpi(void)
 
 int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
 {
+    printk("Entered sys_send, sending to rank: %d", rank);
     // check parameters
     if ( message == NULL || message_size < 1)
         return -EINVAL;
     // make sure current process is registered in the mpi
     if ( current->rank == -1)
+    {
+        printk("current process not registered, leaving sys_send with error");
         return -ESRCH;
+    }
     // search for rank in the linked list
     list_t* pos;
     BOOL found = FALSE;
@@ -43,7 +47,10 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
         }
     }
     if (found == FALSE)
+    {
+        printk("Rank to send to is not registered, leaving sys_send with error");
         return -ESRCH; // rank was not found in the mpi processes list
+    }
     // both sender and receiver are in the mpi list, copy the message from the user
     char* copiedMsg = (char*)kmalloc(message_size*sizeof(char), GFP_KERNEL);
     if ( copiedMsg == NULL )
@@ -70,12 +77,16 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
 
 int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
 {
+    printk("Entered sys_receive, trying to receive from rank: %d", rank);
     // check parameters
     if ( message == NULL || message_size < 1)
         return -EINVAL;
     // make sure current process is registered in the mpi
     if ( current->rank == -1)
+    {
+        printk("current process not registered, leaving sys_send with error");
         return -ESRCH;
+    }
     // search for rank in the linked list
     list_t *pos;
     BOOL found = FALSE;
@@ -88,7 +99,10 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
         }
     }
     if (found == FALSE)
+    {
+        printk("Rank to send to is not registered, leaving sys_send with error");
         return -ESRCH; // rank was not found in the mpi processes list
+    }
     // both sender and receiver are in the mpi list,
     // check if there is a message waiting from 'rank'
     found = FALSE;
@@ -101,24 +115,33 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
         }
     }
     if ( found == FALSE ) // no message waiting from rank, even though rank is indeed in the mpi list
+    {
+        printk("did not find any message waiting from rank: %d", rank);
         return -EFAULT;
+    }
     
     msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
     // found is TRUE, so pos is the relevant message entry from rank to the receiver
-    // TODO : what if message_size if smaller than the actual message size?
-    if ( copy_to_user( message, curMsg->msg , curMsg->msgsize) )
+    int amntToRead = (curMsg->msgsize < message_size)? curMsg->msgsize : message_size; // copy all of we have room, or use up all the room we have
+    if ( copy_to_user( message, curMsg->msg , amntToRead) )
+    {
+        printk("Failed in copy from user");
         return -EFAULT;
+    }
     ssize_t copiedSize = curMsg->msgsize; //TODO: is it possible that copy to user copied less?    
     // done copying the message, remove the entry
     list_del( &(curMsg->mylist) );
     kfree(curMsg->msg);
     kfree(curMsg);
-
+    printk("Done reading message into 'message' buffer, returning copiedSize: %d", copiedSize);
     return copiedSize;
 }
 
 int copyMPI(struct task_struct* p)
 {
+    // make sure the parent is actually in the MPI list
+    if (current->rank == -1)
+        return 0;
     // init the msg list
     INIT_LIST_HEAD(&p->taskMsgHead);
     // register the child process as a new process in the mpi list
@@ -170,6 +193,7 @@ int copyMPI(struct task_struct* p)
         return -ENOMEM; // TODO: what to do in this situation?
     }
     // done copying all messages
+    printk("copyMPI completed, new process rank should be: %d", p->rank);
     return 0;
 }
 
@@ -177,6 +201,7 @@ int copyMPI(struct task_struct* p)
 
 void exit_MPI(void)
 {
+    int crank = current->rank;
     if(current->rank == -1)
         return; // not registered for MPI
     // we are in MPI, remove us from the mpi process list
@@ -197,4 +222,5 @@ void exit_MPI(void)
         kfree(curMsg->msg);
         kfree(curMsg);
     }
+    printk("exit_MPI completed, deleted process with rank: %d", crank);
 }
