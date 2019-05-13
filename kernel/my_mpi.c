@@ -25,14 +25,14 @@ int sys_register_mpi(void)
 
 int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
 {
-    printk("Entered sys_send, sending to rank: %d", rank);
-    // check parameters
+    printk("Entered sys_send, sending to rank: %d, from rank %d\n", rank, current->rank);
+    // check parameter
     if ( message == NULL || message_size < 1)
         return -EINVAL;
     // make sure current process is registered in the mpi
     if ( current->rank == -1)
     {
-        printk("current process not registered, leaving sys_send with error");
+        printk("current process not registered, leaving sys_send with error\n");
         return -ESRCH;
     }
     // search for rank in the linked list
@@ -40,7 +40,9 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     BOOL found = FALSE;
     list_for_each(pos,&g_mpi_head)
     {
-        if( list_entry(pos,g_mpi_t, mylist)->rank == rank)
+        g_mpi_t *t = list_entry(pos,g_mpi_t, mylist);
+        printk("In send, iterating over g_mpi_head, currently pos->rank == %d\n", t->rank);
+        if( t->rank == rank)
         {
             found = TRUE;
             break;
@@ -48,7 +50,7 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     }
     if (found == FALSE)
     {
-        printk("Rank to send to is not registered, leaving sys_send with error");
+        printk("Rank to send to is not registered, leaving sys_send with error\n");
         return -ESRCH; // rank was not found in the mpi processes list
     }
     // both sender and receiver are in the mpi list, copy the message from the user
@@ -72,40 +74,42 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     msgNode->msgsize = message_size;
     msgNode->senderRank = current->rank;
     list_add_tail( &(msgNode->mylist), &(list_entry(pos,g_mpi_t, mylist)->taskMsgHead) );
+    printk("Done writing message\n");
     return 0;
 }
 
 int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
 {
-    printk("Entered sys_receive, trying to receive from rank: %d", rank);
+    printk("Entered sys_receive, rank: %d is trying to receive from rank: %d\n",current->rank, rank);
     // check parameters
     if ( message == NULL || message_size < 1)
         return -EINVAL;
     // make sure current process is registered in the mpi
     if ( current->rank == -1)
     {
-        printk("current process not registered, leaving sys_send with error");
+        printk("current process not registered, leaving sys_receive with error\n");
         return -ESRCH;
     }
     // search for rank in the linked list
     list_t *pos;
     BOOL found = FALSE;
-    list_for_each(pos,&g_mpi_head)
+    /*list_for_each(pos,&g_mpi_head)
     {
-        if( list_entry(pos,g_mpi_t, mylist)->rank == rank)
+        g_mpi_t *t = list_entry(pos,g_mpi_t, mylist);
+        printk("In receive, iterating over g_mpi_head, currently pos->rank == %d\n", t->rank);
+        if( t->rank == rank)
         {
             found = TRUE;
             break;
         }
-    }
-    if (found == FALSE)
+    }*/
+    if (nextRank <= rank || rank < 0) // rank was not registered in the current cycle.
     {
-        printk("Rank to send to is not registered, leaving sys_send with error");
+        printk("Rank to receive from is not registered, leaving sys_receive with error\n");
         return -ESRCH; // rank was not found in the mpi processes list
     }
     // both sender and receiver are in the mpi list,
     // check if there is a message waiting from 'rank'
-    found = FALSE;
     list_for_each(pos,&(current->taskMsgHead))
     {
         if( list_entry(pos,msg_q_t, mylist)->senderRank == rank)
@@ -116,7 +120,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     }
     if ( found == FALSE ) // no message waiting from rank, even though rank is indeed in the mpi list
     {
-        printk("did not find any message waiting from rank: %d", rank);
+        printk("did not find any message waiting from rank: %d\n", rank);
         return -EFAULT;
     }
     
@@ -125,7 +129,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     int amntToRead = (curMsg->msgsize < message_size)? curMsg->msgsize : message_size; // copy all of we have room, or use up all the room we have
     if ( copy_to_user( message, curMsg->msg , amntToRead) )
     {
-        printk("Failed in copy from user");
+        printk("Failed in copy from user\n");
         return -EFAULT;
     }
     ssize_t copiedSize = curMsg->msgsize; //TODO: is it possible that copy to user copied less?    
@@ -133,7 +137,13 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     list_del( &(curMsg->mylist) );
     kfree(curMsg->msg);
     kfree(curMsg);
-    printk("Done reading message into 'message' buffer, returning copiedSize: %d", copiedSize);
+     // DEBUG REMOVE FOR LOOP TODO
+    list_for_each(pos,&current->taskMsgHead)
+    {
+        g_mpi_t *t = list_entry(pos,msg_q_t, mylist);
+        printk("In receive, iterating over taskMsgHead, currently message->rank == %d\n", t->rank);
+    }
+    printk("Done reading message into 'message' buffer, returning copiedSize: %d\n", copiedSize);
     return copiedSize;
 }
 
@@ -142,6 +152,7 @@ int copyMPI(struct task_struct* p)
     // make sure the parent is actually in the MPI list
     if (current->rank == -1)
         return 0;
+    printk("Entered copyMPI from process rank: %d\n", current->rank);
     // init the msg list
     INIT_LIST_HEAD(&p->taskMsgHead);
     // register the child process as a new process in the mpi list
@@ -153,9 +164,18 @@ int copyMPI(struct task_struct* p)
     newNode->rank = p->rank;
     newNode->taskMsgHead = p->taskMsgHead;
     list_add_tail( &(newNode->mylist), &g_mpi_head );
+    printk("Added child to MPI list with rank: %d\n", newNode->rank);
     // copy all of the messages from the parent to the child process
     list_t *pos;
+    /* DEBUG TODO REMOTE */
+    list_for_each(pos,&g_mpi_head)
+    {
+        g_mpi_t *t = list_entry(pos,g_mpi_t, mylist);
+        printk("In copyMPI, iterating over g_mpi_head, currently pos->rank == %d\n", t->rank);
+    }
+    /* DEBUG TODO REMOTE */
     BOOL failed = FALSE;
+    return 0; // DEBUG TODO REMOVE
     list_for_each(pos,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
@@ -193,7 +213,7 @@ int copyMPI(struct task_struct* p)
         return -ENOMEM; // TODO: what to do in this situation?
     }
     // done copying all messages
-    printk("copyMPI completed, new process rank should be: %d", p->rank);
+    printk("copyMPI completed, new process rank should be: %d\n", p->rank);
     return 0;
 }
 
@@ -216,11 +236,12 @@ void exit_MPI(void)
     if (g_mpi_head.prev == &g_mpi_head && g_mpi_head.next == &g_mpi_head) // list is empty, need to reset rank numbers
         nextRank = 0;
     // finally, delete all messages in this process's queue
+    return; // DEBUG TODO REMOVE
     list_for_each(pos,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
         kfree(curMsg->msg);
         kfree(curMsg);
     }
-    printk("exit_MPI completed, deleted process with rank: %d", crank);
+    printk("exit_MPI completed, deleted process with rank: %d\n", crank);
 }
