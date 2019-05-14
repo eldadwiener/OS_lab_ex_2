@@ -7,15 +7,13 @@
 typedef struct global_mpi_struct g_mpi_t;
 typedef struct msg_queue_struct msg_q_t;
 
-extern list_t g_mpi_head;
-extern int nextRank;
 
 typedef enum BOOL {FALSE,TRUE} BOOL;
 
 struct global_mpi_struct{
     list_t mylist;
     int rank;
-    list_t taskMsgHead;
+    list_t *taskMsgHead;
 };
 
 struct msg_queue_struct {

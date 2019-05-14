@@ -25,8 +25,9 @@ int sys_register_mpi(void)
     // update the node and the task struct to register the process.
     current->rank = nextRank++;
     newNode->rank = current->rank;
-    newNode->taskMsgHead = current->taskMsgHead;
+    newNode->taskMsgHead = &current->taskMsgHead;
     list_add_tail( &(newNode->mylist), &g_mpi_head );
+    printk("registered new process, rank: %d, mpi list node address: %d", current->rank, newNode);
     return current->rank;
 }
 
@@ -60,6 +61,7 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
         printk("Rank to send to is not registered, leaving sys_send with error\n");
         return -ESRCH; // rank was not found in the mpi processes list
     }
+    g_mpi_t *recMpiNode = list_entry(pos,g_mpi_t, mylist);
     // both sender and receiver are in the mpi list, copy the message from the user
     char* copiedMsg = (char*)kmalloc(message_size*sizeof(char), GFP_KERNEL);
     if ( copiedMsg == NULL )
@@ -80,8 +82,9 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     msgNode->msg = copiedMsg;
     msgNode->msgsize = message_size;
     msgNode->senderRank = current->rank;
-    list_add_tail( &(msgNode->mylist), &(list_entry(pos,g_mpi_t, mylist)->taskMsgHead) );
+    list_add_tail( &(msgNode->mylist), recMpiNode->taskMsgHead );
     printk("Done writing message\n");
+    printk("Head: %d, Head->next: %d\n",recMpiNode->taskMsgHead,recMpiNode->taskMsgHead->next);
     return 0;
 }
 
@@ -131,7 +134,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     }
     ssize_t copiedSize = amntToRead; 
     // done copying the message, remove the entry
-    list_del( &(curMsg->mylist) );
+    list_del(pos);
     kfree(curMsg->msg);
     kfree(curMsg);
     printk("Done reading message into 'message' buffer, returning copiedSize: %d\n", copiedSize);
@@ -153,7 +156,7 @@ int copyMPI(struct task_struct* p)
     // update the node and the task struct to register the process.
     p->rank = nextRank++;
     newNode->rank = p->rank;
-    newNode->taskMsgHead = p->taskMsgHead;
+    newNode->taskMsgHead = &(p->taskMsgHead);
     list_add_tail( &(newNode->mylist), &g_mpi_head );
     printk("Added child to MPI list with rank: %d\n", newNode->rank);
     // copy all of the messages from the parent to the child process
@@ -215,20 +218,24 @@ void exit_MPI(void)
         if( list_entry(pos,g_mpi_t, mylist)->rank == current->rank)
             break;
     }   
+    g_mpi_t *mpiNode = list_entry(pos, g_mpi_t, mylist);
     list_del(pos);
+    kfree(mpiNode);
+    printk("used kfree for mpi list node, node address: %d\n", mpiNode);
     if (list_empty(&g_mpi_head)) // list is empty, need to reset rank numbers
     {
         nextRank = 0;
         INIT_LIST_HEAD(&g_mpi_head);
     }
     // finally, delete all messages in this process's queue
+    printk("Head: %d, Head->next: %d\n",&current->taskMsgHead,&(current->taskMsgHead.next));
     list_for_each_safe(pos,n,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
         list_del(pos);
         kfree(curMsg->msg);
         kfree(curMsg);
+        printk("Done iteration of message free loop\n");
     }
-    kfree(list_entry(pos,g_mpi_t, mylist));
     printk("exit_MPI completed, deleted process with rank: %d\n", current->rank);
 }
