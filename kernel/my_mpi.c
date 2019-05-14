@@ -140,7 +140,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
         printk("Failed in copy from user\n");
         return -EFAULT;
     }
-    ssize_t copiedSize = curMsg->msgsize; //TODO: is it possible that copy to user copied less?    
+    ssize_t copiedSize = amntToRead; //TODO: is it possible that copy to user copied less?    
     // done copying the message, remove the entry
     list_del( &(curMsg->mylist) );
     kfree(curMsg->msg);
@@ -224,10 +224,10 @@ int copyMPI(struct task_struct* p)
 
 void exit_MPI(void)
 {
-    int crank = current->rank;
     if(current->rank == -1)
         return; // not registered for MPI
     // we are in MPI, remove us from the mpi process list
+    printk("In exit_MPI, process rank: %d", current->rank);
     list_t *pos;
     list_for_each(pos,&g_mpi_head)
     {
@@ -246,5 +246,5 @@ void exit_MPI(void)
         kfree(curMsg->msg);
         kfree(curMsg);
     }
-    printk("exit_MPI completed, deleted process with rank: %d\n", crank);
+    printk("exit_MPI completed, deleted process with rank: %d\n", current->rank);
 }
