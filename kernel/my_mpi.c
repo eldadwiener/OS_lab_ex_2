@@ -5,13 +5,21 @@
 #include <linux/slab.h>
 #include <asm/uaccess.h>
 
-list_t g_mpi_head = LIST_HEAD_INIT(g_mpi_head);
+//list_t g_mpi_head = LIST_HEAD_INIT(g_mpi_head);
+list_t g_mpi_head;
+BOOL didInit = FALSE; 
 int nextRank = 0;
 
 int sys_register_mpi(void)
 {
+    if (!didInit) //init g_mpi_head if it not yet initialized
+    { 
+        INIT_LIST_HEAD(&g_mpi_head);
+        didInit = TRUE;
+    }
     if(current->rank != -1) // already registered
         return current->rank;
+    INIT_LIST_HEAD(&current->taskMsgHead);
     g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL); // TODO: check if allocated correctly
     if(newNode == NULL)
         return -ENOMEM;
@@ -127,7 +135,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
     // found is TRUE, so pos is the relevant message entry from rank to the receiver
     int amntToRead = (curMsg->msgsize < message_size)? curMsg->msgsize : message_size; // copy all of we have room, or use up all the room we have
-    if ( copy_to_user( message, curMsg->msg , amntToRead) )
+    if ( copy_to_user( message, curMsg->msg , amntToRead) )//TODO fix the return suze to the min between msgsize message_size
     {
         printk("Failed in copy from user\n");
         return -EFAULT;
@@ -137,12 +145,7 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
     list_del( &(curMsg->mylist) );
     kfree(curMsg->msg);
     kfree(curMsg);
-     // DEBUG REMOVE FOR LOOP TODO
-    list_for_each(pos,&current->taskMsgHead)
-    {
-        g_mpi_t *t = list_entry(pos,msg_q_t, mylist);
-        printk("In receive, iterating over taskMsgHead, currently message->rank == %d\n", t->rank);
-    }
+    // DEBUG REMOVE FOR LOOP TODO
     printk("Done reading message into 'message' buffer, returning copiedSize: %d\n", copiedSize);
     return copiedSize;
 }
@@ -168,12 +171,12 @@ int copyMPI(struct task_struct* p)
     // copy all of the messages from the parent to the child process
     list_t *pos;
     /* DEBUG TODO REMOTE */
-    list_for_each(pos,&g_mpi_head)
+   /* list_for_each(pos,&g_mpi_head)
     {
         g_mpi_t *t = list_entry(pos,g_mpi_t, mylist);
         printk("In copyMPI, iterating over g_mpi_head, currently pos->rank == %d\n", t->rank);
     }
-    /* DEBUG TODO REMOTE */
+     */
     BOOL failed = FALSE;
     return 0; // DEBUG TODO REMOVE
     list_for_each(pos,&current->taskMsgHead)
@@ -236,7 +239,7 @@ void exit_MPI(void)
     if (g_mpi_head.prev == &g_mpi_head && g_mpi_head.next == &g_mpi_head) // list is empty, need to reset rank numbers
         nextRank = 0;
     // finally, delete all messages in this process's queue
-    return; // DEBUG TODO REMOVE
+    //return; // DEBUG TODO REMOVE
     list_for_each(pos,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
