@@ -178,7 +178,6 @@ int copyMPI(struct task_struct* p)
     }
      */
     BOOL failed = FALSE;
-    return 0; // DEBUG TODO REMOVE
     list_for_each(pos,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
@@ -207,9 +206,10 @@ int copyMPI(struct task_struct* p)
     // free memory if failed to copy
     if ( failed == TRUE)
     {
-        list_for_each(pos,&p->taskMsgHead)
+        list_for_each_safe(pos,&p->taskMsgHead)
         {
             msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+            list_del(pos);
             kfree(curMsg->msg);
             kfree(curMsg);
         }
@@ -227,24 +227,28 @@ void exit_MPI(void)
     if(current->rank == -1)
         return; // not registered for MPI
     // we are in MPI, remove us from the mpi process list
-    printk("In exit_MPI, process rank: %d", current->rank);
+    printk("In exit_MPI, process rank: %d\n", current->rank);
     list_t *pos;
     list_for_each(pos,&g_mpi_head)
     {
         if( list_entry(pos,g_mpi_t, mylist)->rank == current->rank)
             break;
     }   
-    list_del( pos );
-    kfree(list_entry(pos,g_mpi_t, mylist));
-    if (g_mpi_head.prev == &g_mpi_head && g_mpi_head.next == &g_mpi_head) // list is empty, need to reset rank numbers
+    list_del(pos);
+    if (list_empty(&g_mpi_head)) // list is empty, need to reset rank numbers
+    {
         nextRank = 0;
+        INIT_LIST_HEAD(&g_mpi_head);
+    }
     // finally, delete all messages in this process's queue
     //return; // DEBUG TODO REMOVE
-    list_for_each(pos,&current->taskMsgHead)
+    list_for_each_safe(pos,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+        list_del(pos);
         kfree(curMsg->msg);
         kfree(curMsg);
     }
+    kfree(list_entry(pos,g_mpi_t, mylist));
     printk("exit_MPI completed, deleted process with rank: %d\n", current->rank);
 }
