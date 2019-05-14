@@ -654,6 +654,10 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 
 	INIT_LIST_HEAD(&p->run_list);
 
+	/* COPY MPI DATA */
+	copyMPI(p); //TODO: what if failed? we don't know how to handle the fork cleanup
+	/* END OF MPI COPY */
+
 	p->p_cptr = NULL;
 	init_waitqueue_head(&p->wait_chldexit);
 	p->vfork_done = NULL;
@@ -706,10 +710,6 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 	if (retval)
 		goto bad_fork_cleanup_namespace;
 	p->semundo = NULL;
-	
-	/* COPY MPI DATA */
-	copyMPI(p); //TODO: what if failed? we don't know how to handle the fork cleanup
-	/* END OF MPI COPY */
 
 	/* Our parent execution domain becomes current domain
 	   These must match for thread signalling to apply */

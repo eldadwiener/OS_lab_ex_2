@@ -498,6 +498,8 @@ NORET_TYPE void do_exit(long code)
 		panic("Attempted to kill init!");
 	tsk->flags |= PF_EXITING;
 	del_timer_sync(&tsk->real_timer);
+// delete the mpi buff
+	exit_MPI();
 
 fake_volatile:
 #ifdef CONFIG_BSD_PROCESS_ACCT
@@ -519,7 +521,6 @@ fake_volatile:
 	exit_namespace(tsk);
 	exit_sighand(tsk);
 	exit_thread();
-	exit_MPI();
 
 	if (current->leader)
 		disassociate_ctty(1);
