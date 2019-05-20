@@ -5,6 +5,7 @@
 #include <linux/slab.h>
 #include <asm/uaccess.h>
 
+// GLOBALS
 list_t g_mpi_head;
 BOOL didInit = FALSE; 
 int nextRank = 0;
@@ -18,8 +19,9 @@ int sys_register_mpi(void)
     }
     if(current->rank != -1) // already registered
         return current->rank;
+    // start register process
     INIT_LIST_HEAD(&current->taskMsgHead);
-    g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL); // TODO: check if allocated correctly
+    g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL);
     if(newNode == NULL)
         return -ENOMEM;
     // update the node and the task struct to register the process.
@@ -49,7 +51,6 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     list_for_each(pos,&g_mpi_head)
     {
         g_mpi_t *t = list_entry(pos,g_mpi_t, mylist);
-        printk("In send, iterating over g_mpi_head, currently pos->rank == %d\n", t->rank);
         if( t->rank == rank)
         {
             found = TRUE;
@@ -84,7 +85,6 @@ int sys_send_mpi_message(int rank, const char* message, ssize_t message_size)
     msgNode->senderRank = current->rank;
     list_add_tail( &(msgNode->mylist), recMpiNode->taskMsgHead );
     printk("Done writing message\n");
-    printk("Head: %d, Head->next: %d\n",recMpiNode->taskMsgHead,recMpiNode->taskMsgHead->next);
     return 0;
 }
 
@@ -100,10 +100,10 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
         printk("current process not registered, leaving sys_receive with error\n");
         return -ESRCH;
     }
-    // search for rank in the linked list
+    // make sure the receiver rank is valid (smaller than the biggest rank in the system) 
     list_t *pos;
     BOOL found = FALSE;
-    if (nextRank <= rank || rank < 0) // rank was not registered in the current cycle.
+    if (nextRank <= rank || rank < 0)
     {
         printk("Rank to receive from is not registered, leaving sys_receive with error\n");
         return -ESRCH; // rank was not found in the mpi processes list
@@ -124,9 +124,9 @@ int sys_receive_mpi_message(int rank, char* message, ssize_t message_size)
         return -EFAULT;
     }
     
-    msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
     // found is TRUE, so pos is the relevant message entry from rank to the receiver
-    int amntToRead = (curMsg->msgsize < message_size)? curMsg->msgsize : message_size; // copy all of we have room, or use up all the room we have
+    msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
+    int amntToRead = (curMsg->msgsize < message_size)? curMsg->msgsize : message_size; // copy all if possible, or use up all the room we have
     if ( copy_to_user( message, curMsg->msg , amntToRead) )
     {
         printk("Failed in copy from user\n");
@@ -150,7 +150,7 @@ int copyMPI(struct task_struct* p)
     // init the msg list
     INIT_LIST_HEAD(&p->taskMsgHead);
     // register the child process as a new process in the mpi list
-    g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL); // TODO: check if allocated correctly
+    g_mpi_t* newNode = (g_mpi_t*)kmalloc(sizeof(g_mpi_t),GFP_KERNEL);
     if(newNode == NULL)
         return -ENOMEM; // TODO: what do we do here?
     // update the node and the task struct to register the process.
@@ -158,7 +158,6 @@ int copyMPI(struct task_struct* p)
     newNode->rank = p->rank;
     newNode->taskMsgHead = &(p->taskMsgHead);
     list_add_tail( &(newNode->mylist), &g_mpi_head );
-    printk("Added child to MPI list with rank: %d\n", newNode->rank);
     // copy all of the messages from the parent to the child process
     list_t *pos,*n;
     BOOL failed = FALSE;
@@ -210,9 +209,9 @@ void exit_MPI(void)
 {
     if(current->rank == -1)
         return; // not registered for MPI
-    // we are in MPI, remove us from the mpi process list
     printk("In exit_MPI, process rank: %d\n", current->rank);
     list_t *pos, *n;
+    // we are in MPI, remove us from the mpi process list
     list_for_each(pos,&g_mpi_head)
     {
         if( list_entry(pos,g_mpi_t, mylist)->rank == current->rank)
@@ -221,21 +220,18 @@ void exit_MPI(void)
     g_mpi_t *mpiNode = list_entry(pos, g_mpi_t, mylist);
     list_del(pos);
     kfree(mpiNode);
-    printk("used kfree for mpi list node, node address: %d\n", mpiNode);
     if (list_empty(&g_mpi_head)) // list is empty, need to reset rank numbers
     {
         nextRank = 0;
         INIT_LIST_HEAD(&g_mpi_head);
     }
     // finally, delete all messages in this process's queue
-    printk("Head: %d, Head->next: %d\n",&current->taskMsgHead,&(current->taskMsgHead.next));
     list_for_each_safe(pos,n,&current->taskMsgHead)
     {
         msg_q_t* curMsg = list_entry(pos,msg_q_t, mylist);
         list_del(pos);
         kfree(curMsg->msg);
         kfree(curMsg);
-        printk("Done iteration of message free loop\n");
     }
     printk("exit_MPI completed, deleted process with rank: %d\n", current->rank);
 }
